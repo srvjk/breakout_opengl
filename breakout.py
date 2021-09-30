@@ -6,6 +6,7 @@ import glm
 #from stb import image as im
 from PIL import Image
 from numpy import asarray
+import ctypes
 
 
 class GameState(Enum):
@@ -54,7 +55,8 @@ class Shader:
 
         fragment_shader = gl.glCreateShader(gl.GL_FRAGMENT_SHADER)
         gl.glShaderSource(fragment_shader, fragment_source)
-        compile_status = gl.glCompileShader(fragment_shader)
+        gl.glCompileShader(fragment_shader)
+        compile_status = gl.glGetShaderiv(fragment_shader, gl.GL_COMPILE_STATUS)
         if not compile_status:
             print("Fragment shader compilation failed")
 
@@ -62,7 +64,8 @@ class Shader:
         if geometry_source:
             geometry_shader = gl.glCreateShader(gl.GL_GEOMETRY_SHADER)
             gl.glShaderSource(geometry_shader, geometry_source)
-            compile_status = gl.glCompileShader(geometry_shader)
+            gl.glCompileShader(geometry_shader)
+            compile_status = gl.glGetShaderiv(vertex_shader, gl.GL_COMPILE_STATUS)
             if not compile_status:
                 print("Geometry shader compilation failed")
 
@@ -230,8 +233,10 @@ class SpriteRenderer:
         gl.glBufferData(gl.GL_ARRAY_BUFFER, len(vertices) * 4, (gl.GLfloat * len(vertices))(*vertices),
                         gl.GL_STATIC_DRAW)
         gl.glBindVertexArray(self.vao)
-        gl.glEnableVertexAttribArray(0)
+
         gl.glVertexAttribPointer(0, 4, gl.GL_FLOAT, gl.GL_FALSE, 16, None) # MAY BE WRONG!
+        gl.glEnableVertexAttribArray(0)
+
         gl.glBindBuffer(gl.GL_ARRAY_BUFFER, 0)
         gl.glBindVertexArray(0)
 
