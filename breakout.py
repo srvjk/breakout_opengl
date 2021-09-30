@@ -102,20 +102,10 @@ class Shader:
             self.use()
         gl.glUniform2f(gl.glGetUniformLocation(self.shader_program, name), x, y)
 
-    def set_vector3f(self, name, x, y, z, use_shader = False):
-        if use_shader:
-            self.use()
-        gl.glUniform3f(gl.glGetUniformLocation(self.shader_program, name), x, y, z)
-
     def set_vector3f(self, name, vector, use_shader = False):
         if use_shader:
             self.use()
         gl.glUniform3f(gl.glGetUniformLocation(self.shader_program, name), vector.x, vector.y, vector.z)
-
-    def set_vector4f(self, name, x, y, z, w, use_shader = False):
-        if use_shader:
-            self.use()
-        gl.glUniform4f(gl.glGetUniformLocation(self.shader_program, name), x, y, z, w)
 
     def set_vector4f(self, name, vector, use_shader = False):
         if use_shader:
