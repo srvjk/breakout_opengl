@@ -15,30 +15,156 @@ class GameState(Enum):
     GAME_WIN = 3
 
 
+PLAYER_SIZE = glm.vec2(128.0, 32.0)
+PLAYER_VELOCITY = 500.0
+
+
 class Game:
     def __init__(self, width, height):
         self.game_state = GameState.GAME_ACTIVE
-        self.resource_manager = ResourceManager()
         self.renderer = None
         self.width = width
         self.height = height
+        self.levels = list()
+        self.level = 0
+        self.keys = [False for x in range(1024)]
 
     def init(self):
-        self.resource_manager.load_shader("sprite", "sprite.vs", "sprite.frag")
+        resource_manager.load_shader("sprite", "sprite.vs", "sprite.frag")
         projection = glm.ortho(0.0, self.width, self.height, 0.0)
-        shader = self.resource_manager.get_shader("sprite")
+        shader = resource_manager.get_shader("sprite")
         shader.use()
         shader.set_integer("image", 0)
         shader.set_matrix4("projection", projection)
         self.renderer = SpriteRenderer(shader)
-        self.resource_manager.load_texture("face.png", True, "face")
+        resource_manager.load_texture("textures/background.jpg", False, "background")
+        resource_manager.load_texture("textures/face.png", True, "face")
+        resource_manager.load_texture("textures/block.png", False, "block")
+        resource_manager.load_texture("textures/block_solid.png", False, "block_solid")
+        resource_manager.load_texture("textures/paddle.png", True, "paddle")
 
-    def process_input(self):
-        pass
+        level_one = GameLevel()
+        level_one.load("levels/one.lvl", self.width, self.height / 2)
+        self.levels.append(level_one)
+        level_two = GameLevel()
+        level_two.load("levels/two.lvl", self.width, self.height / 2)
+        self.levels.append(level_two)
+        level_three = GameLevel()
+        level_three.load("levels/three.lvl", self.width, self.height / 2)
+        self.levels.append(level_three)
+        level_four = GameLevel()
+        level_four.load("levels/four.lvl", self.width, self.height / 2)
+        self.levels.append(level_four)
+        self.level = 0
+
+        self.player = GameObject()
+        self.player.position = glm.vec2(self.width / 2.0 - PLAYER_SIZE.x / 2.0, self.height - PLAYER_SIZE.y)
+        self.player.size = PLAYER_SIZE
+        self.player.sprite = resource_manager.get_texture("paddle")
+
+    def process_input(self, dt):
+        if self.game_state == GameState.GAME_ACTIVE:
+            distance = PLAYER_VELOCITY * dt
+            if self.keys[glfw.KEY_A]:
+                if self.player.position.x >= 0.0:
+                    self.player.position.x -= distance
+            if self.keys[glfw.KEY_D]:
+                if self.player.position.x <= self.width - self.player.size.x:
+                    self.player.position.x += distance
 
     def render(self):
-        self.renderer.draw_sprite(self.resource_manager.get_texture("face"), glm.vec2(200.0, 200.0),
-                                  glm.vec2(300.0, 400.0), 45.0, glm.vec3(0.0, 1.0, 0.0))
+        if self.game_state == GameState.GAME_ACTIVE:
+            self.renderer.draw_sprite(resource_manager.get_texture("background"), glm.vec2(0.0, 0.0),
+                                      glm.vec2(self.width, self.height), 0.0, glm.vec3(1.0))
+            self.levels[self.level].draw(self.renderer)
+
+            self.player.draw(self.renderer)
+
+
+class GameObject:
+    def __init__(self):
+        self.position = glm.vec2(0.0, 0.0)
+        self.size = glm.vec2(1.0, 1.0)
+        self.velocity = glm.vec2(0.0, 0.0)
+        self.color = glm.vec3(1.0, 1.0, 1.0)
+        self.rotation = 0.0
+        self.is_solid = False
+        self.is_destroyed = False
+        self.sprite = None
+
+    def draw(self, renderer):
+        renderer.draw_sprite(self.sprite, self.position, self.size, self.rotation, self.color)
+
+
+class GameLevel:
+    def __init__(self):
+        self.bricks = list()
+
+    def load(self, file_path, level_width, level_height):
+        self.bricks.clear()
+        tile_data = list()
+        with open(file_path) as f:
+            for line in f:
+                row = list()
+                words = line.split()
+                for word in words:
+                    try:
+                        code = int(word)
+                    except ValueError:
+                        return
+                    row.append(code)
+                tile_data.append(row)
+
+        if tile_data:
+            self._init(tile_data, level_width, level_height)
+
+    def _init(self, tile_data, level_width, level_height):
+        height = len(tile_data)
+        width = len(tile_data[0])
+        unit_width = level_width / float(width)
+        unit_height = level_height / float(height)
+
+        for y in range(height):
+            for x in range(width):
+                tile_value = tile_data[y][x]
+                if tile_value == 1: # "solid" brick
+                    pos = glm.vec2(unit_width * x, unit_height * y)
+                    size = glm.vec2(unit_width, unit_height)
+                    obj = GameObject()
+                    obj.position = pos
+                    obj.size = size
+                    obj.sprite = resource_manager.get_texture("block_solid")
+                    obj.color = glm.vec3(0.8, 0.8, 0.7)
+                    obj.is_solid = True
+                    self.bricks.append(obj)
+                elif tile_value > 1:
+                    pos = glm.vec2(unit_width * x, unit_height * y)
+                    size = glm.vec2(unit_width, unit_height)
+                    obj = GameObject()
+                    obj.position = pos
+                    obj.size = size
+                    obj.sprite = resource_manager.get_texture("block")
+                    color = glm.vec3(1.0)
+                    if tile_value == 2:
+                        color = glm.vec3(0.2, 0.6, 1.0)
+                    elif tile_value == 3:
+                        color = glm.vec3(0.0, 0.7, 0.0)
+                    elif tile_value == 4:
+                        color = glm.vec3(0.8, 0.8, 0.4)
+                    elif tile_value == 5:
+                        color = glm.vec3(1.0, 0.5, 0.0)
+                    obj.color = color
+                    self.bricks.append(obj)
+
+    def draw(self, renderer):
+        for brick in self.bricks:
+            brick.draw(renderer)
+
+    def is_completed(self):
+        for brick in self.bricks:
+            if (not brick.is_solid) and (not brick.is_destroyed):
+                return False
+        return True
 
 
 class Shader:
@@ -178,7 +304,7 @@ class ResourceManager:
 
         image = Image.open(texture_file)
         data = asarray(image)
-        texture.generate(data.shape[0], data.shape[1], data)
+        texture.generate(data.shape[1], data.shape[0], data)  # Attention: in np.array height is the first param!
 
         self.textures[texture_name] = texture
 
@@ -248,6 +374,8 @@ class SpriteRenderer:
         gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6)
         gl.glBindVertexArray(0)
 
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 600
 
 def init_glfw():
     # Initialize the GLFW library
@@ -261,11 +389,13 @@ def init_glfw():
     # OpenGL context should be forward-compatible
     glfw.window_hint(glfw.OPENGL_FORWARD_COMPAT, gl.GL_TRUE)
 
+    glfw.window_hint(glfw.RESIZABLE, False)
+
     # Create a window in windowed mode and it's OpenGL context
     primary = glfw.get_primary_monitor()  # for GLFWmonitor
     window = glfw.create_window(
-        1024,  # width, is required here but overwritten by "glfw.set_window_size()" above
-        768,  # height, is required here but overwritten by "glfw.set_window_size()" above
+        SCREEN_WIDTH,  # width, is required here but overwritten by "glfw.set_window_size()" above
+        SCREEN_HEIGHT,  # height, is required here but overwritten by "glfw.set_window_size()" above
         "pyimgui-examples-glfw",  # window name, is overwritten by "glfw.set_window_title()" above
         None,  # GLFWmonitor: None = windowed mode, 'primary' to choose fullscreen (resolution needs to be adjusted)
         None  # GLFWwindow
@@ -279,29 +409,55 @@ def init_glfw():
     # Makes window current on the calling thread
     glfw.make_context_current(window)
 
+    glfw.set_framebuffer_size_callback(window, framebuffer_size_callback)
+    glfw.set_key_callback(window, key_callback)
+
     # Passing window to main()
     return window
 
+breakout = Game(SCREEN_WIDTH, SCREEN_HEIGHT)
+resource_manager = ResourceManager()
+
+def framebuffer_size_callback(window, width, height):
+    gl.glViewport(0, 0, win_width, win_height)
+
+def key_callback(window, key, scancode, action, mods):
+    if key == glfw.KEY_ESCAPE and action == glfw.PRESS:
+        glfw.window_should_close(window)
+    if key >= 0 and key < 1024:
+        if action == glfw.PRESS:
+            breakout.keys[key] = True
+        elif action == glfw.RELEASE:
+            breakout.keys[key] = False
 
 def main():
     window = init_glfw()
 
-    win_width = 1024
-    win_height = 768
+    win_width = SCREEN_WIDTH
+    win_height = SCREEN_HEIGHT
     gl.glViewport(0, 0, win_width, win_height)
+
+    gl.glEnable(gl.GL_BLEND)
+    gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
     attribs = gl.glGetIntegerv(gl.GL_MAX_VERTEX_ATTRIBS)
     print("Maximum number of vertex attributes supported: {}".format(attribs))
 
-    breakout = Game(win_width, win_height)
     breakout.init()
 
+    delta_time = 0.0
+    last_time = 0.0
+
     while not glfw.window_should_close(window):
+        cur_time = glfw.get_time()
+        delta_time = cur_time - last_time
+        last_time = cur_time
+
         glfw.poll_events()
         glfw.set_window_title(window, "Breakout")
         glfw.set_window_size(window, win_width, win_height)
 
-        breakout.process_input()
+        breakout.process_input(delta_time)
 
         gl.glClearColor(0.1, 0.1, 0.1, 1.0)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
