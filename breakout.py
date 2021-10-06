@@ -10,13 +10,21 @@ import ctypes
 
 
 class GameState(Enum):
-    GAME_ACTIVE = 1
-    GAME_MENU = 2
-    GAME_WIN = 3
+    GAME_ACTIVE = 0
+    GAME_MENU = 1
+    GAME_WIN = 2
 
+
+class Direction(Enum):
+    UP = 0
+    RIGHT = 1
+    DOWN = 2
+    LEFT = 3
 
 PLAYER_SIZE = glm.vec2(128.0, 32.0)
 PLAYER_VELOCITY = 500.0
+INITIAL_BALL_VELOCITY = glm.vec2(100.0, -350.0)
+BALL_RADIUS = 12.5
 
 
 class Game:
@@ -28,6 +36,8 @@ class Game:
         self.levels = list()
         self.level = 0
         self.keys = [False for x in range(1024)]
+        self.player = None
+        self.ball = None
 
     def init(self):
         resource_manager.load_shader("sprite", "sprite.vs", "sprite.frag")
@@ -62,15 +72,31 @@ class Game:
         self.player.size = PLAYER_SIZE
         self.player.sprite = resource_manager.get_texture("paddle")
 
+        self.ball = BallObject()
+        self.ball.position = self.player.position + glm.vec2(PLAYER_SIZE.x / 2.0 - BALL_RADIUS, -BALL_RADIUS * 2.0)
+        self.ball.radius = BALL_RADIUS
+        self.ball.velocity = INITIAL_BALL_VELOCITY
+        self.ball.sprite = resource_manager.get_texture("face")
+
+    def update(self, dt):
+        self.ball.move(dt, self.width)
+        self.do_collisions()
+
     def process_input(self, dt):
         if self.game_state == GameState.GAME_ACTIVE:
             distance = PLAYER_VELOCITY * dt
-            if self.keys[glfw.KEY_A]:
+            if self.keys[glfw.KEY_A] or self.keys[glfw.KEY_LEFT]:
                 if self.player.position.x >= 0.0:
                     self.player.position.x -= distance
-            if self.keys[glfw.KEY_D]:
+                    if self.ball.stuck:
+                        self.ball.position.x -= distance
+            if self.keys[glfw.KEY_D] or self.keys[glfw.KEY_RIGHT]:
                 if self.player.position.x <= self.width - self.player.size.x:
                     self.player.position.x += distance
+                    if self.ball.stuck:
+                        self.ball.position.x += distance
+            if self.keys[glfw.KEY_SPACE]:
+                self.ball.stuck = False
 
     def render(self):
         if self.game_state == GameState.GAME_ACTIVE:
@@ -79,6 +105,44 @@ class Game:
             self.levels[self.level].draw(self.renderer)
 
             self.player.draw(self.renderer)
+            self.ball.draw(self.renderer)
+
+    def do_collisions(self):
+        # collisions with bricks
+        for brick in self.levels[self.level].bricks:
+            if not brick.is_destroyed:
+                collision = check_collision(self.ball, brick)
+                if collision[0]:
+                    if not brick.is_solid:
+                        brick.is_destroyed = True
+                    direction = collision[1]
+                    diff = collision[2]
+                    if direction == Direction.LEFT or direction == Direction.RIGHT:
+                        self.ball.velocity.x = -self.ball.velocity.x
+                        penetration = self.ball.radius - abs(diff.x)
+                        if dir == Direction.LEFT:
+                            self.ball.position.x += penetration
+                        else:
+                            self.ball.position.x -= penetration
+                    else:
+                        self.ball.velocity.y = -self.ball.velocity.y
+                        penetration = self.ball.radius - abs(diff.y)
+                        if dir == Direction.UP:
+                            self.ball.position.y -= penetration
+                        else:
+                            self.ball.position.y += penetration
+
+        # collisions with player
+        collision = check_collision(self.ball, self.player)
+        if not self.ball.stuck and collision[0] == True:
+            center_board = self.player.position.x + self.player.size.x / 2.0
+            distance = self.ball.position.x + self.ball.radius - center_board
+            percentage = distance / (self.player.size.x / 2.0)
+            strength = 2.0
+            old_velocity = self.ball.velocity
+            self.ball.velocity.x = INITIAL_BALL_VELOCITY.x * percentage * strength
+            self.ball.velocity.y = -self.ball.velocity.y
+            self.ball.velocity = glm.normalize(self.ball.velocity) * glm.length(old_velocity)
 
 
 class GameObject:
@@ -94,6 +158,71 @@ class GameObject:
 
     def draw(self, renderer):
         renderer.draw_sprite(self.sprite, self.position, self.size, self.rotation, self.color)
+
+
+class BallObject(GameObject):
+    def __init__(self):
+        super().__init__()
+        self.radius = BALL_RADIUS
+        self.size = glm.vec2(self.radius * 2.0, self.radius * 2.0)
+        self.stuck = True
+
+    def move(self, dt, window_width):
+        if not self.stuck:
+            self.position += self.velocity * dt
+
+            if self.position.x <= 0.0:
+                self.velocity.x = -self.velocity.x
+                self.position.x = 0.0
+            elif (self.position.x + self.size.x) >= window_width:
+                self.velocity.x = -self.velocity.x
+                self.position.x = window_width - self.size.x
+
+            if self.position.y <= 0.0:
+                self.velocity.y = -self.velocity.y
+                self.position.y = 0.0
+
+        return self.position
+
+    def reset(self, position, velocity):
+        self.position = position
+        self.velocity = velocity
+        self.stuck = True
+
+
+def vector_direction(target):
+    if glm.length(target) < 0.001:  # TODO make more accurate
+        return Direction.UP
+
+    compass = [
+        glm.vec2(0.0, 1.0),   # up
+        glm.vec2(1.0, 0.0),   # right
+        glm.vec2(0.0, -1.0),  # down
+        glm.vec2(-1.0, 0.0)   # left
+    ]
+
+    max_val = 0.0
+    best_match = -1
+    for i in range(len(compass)):
+        dot_product = glm.dot(glm.normalize(target), compass[i])
+        if dot_product > max_val:
+            max_val = dot_product
+            best_match = i
+
+    return Direction(best_match)
+
+def check_collision(obj1, obj2):
+    center = obj1.position + obj1.radius
+    aabb_half_extents = glm.vec2(obj2.size.x / 2.0, obj2.size.y / 2.0)
+    aabb_center = glm.vec2(obj2.position.x + aabb_half_extents.x, obj2.position.y + aabb_half_extents.y)
+    diff = center - aabb_center
+    clamped = glm.clamp(diff, -aabb_half_extents, aabb_half_extents);
+    closest = aabb_center + clamped
+    diff = closest - center
+
+    if glm.length(diff) <= obj1.radius:
+        return (True, vector_direction(diff), diff)
+    return (False, Direction.UP, glm.vec2(0.0, 0.0))
 
 
 class GameLevel:
@@ -158,7 +287,8 @@ class GameLevel:
 
     def draw(self, renderer):
         for brick in self.bricks:
-            brick.draw(renderer)
+            if not brick.is_destroyed:
+                brick.draw(renderer)
 
     def is_completed(self):
         for brick in self.bricks:
@@ -458,6 +588,7 @@ def main():
         glfw.set_window_size(window, win_width, win_height)
 
         breakout.process_input(delta_time)
+        breakout.update(delta_time)
 
         gl.glClearColor(0.1, 0.1, 0.1, 1.0)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
