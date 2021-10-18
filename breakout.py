@@ -82,6 +82,10 @@ class Game:
         self.ball.move(dt, self.width)
         self.do_collisions()
 
+        if self.ball.position.y >= self.height:
+            self.reset_level()
+            self.reset_player()
+
     def process_input(self, dt):
         if self.game_state == GameState.GAME_ACTIVE:
             distance = PLAYER_VELOCITY * dt
@@ -106,6 +110,22 @@ class Game:
 
             self.player.draw(self.renderer)
             self.ball.draw(self.renderer)
+
+    def reset_level(self):
+        if self.level == 0:
+            self.levels[0].load("levels/one.lvl", self.width, self.height / 2)
+        elif self.level == 1:
+            self.levels[1].load("levels/two.lvl", self.width, self.height / 2)
+        elif self.level == 2:
+            self.levels[2].load("levels/three.lvl", self.width, self.height / 2)
+        elif self.level == 3:
+            self.levels[3].load("levels/four.lvl", self.width, self.height / 2)
+
+    def reset_player(self):
+        self.player.size = PLAYER_SIZE
+        self.player.position = glm.vec2(self.width / 2.0 - PLAYER_SIZE.x / 2.0, self.height - PLAYER_SIZE.y)
+        self.ball.reset(self.player.position + glm.vec2(PLAYER_SIZE.x / 2.0 - BALL_RADIUS, -BALL_RADIUS * 2.0),
+                        INITIAL_BALL_VELOCITY)
 
     def do_collisions(self):
         # collisions with bricks
@@ -141,7 +161,7 @@ class Game:
             strength = 2.0
             old_velocity = self.ball.velocity
             self.ball.velocity.x = INITIAL_BALL_VELOCITY.x * percentage * strength
-            self.ball.velocity.y = -self.ball.velocity.y
+            self.ball.velocity.y = -abs(self.ball.velocity.y)
             self.ball.velocity = glm.normalize(self.ball.velocity) * glm.length(old_velocity)
 
 
